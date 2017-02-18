@@ -2,33 +2,33 @@
 #include <SDL.h>
 #include <math.h>
 #include "color_custom.h"
-#define WIDTH 100
-#define HEIGHT 100
+#define WIDTH 500
+#define HEIGHT 500
 #define BPP 4
 #define DEPTH 32
-#define FUNCTION 1
-//0: mandel
-//1: julia
-//2: z+c^3
-//3: shinking ship
 
+enum function { MANDEL, JULIA, JULIA_3, SINKING_SHIP};
+enum function func = JULIA;
+
+int compr_level = 1;
+int smoothing = 0;
 
 //complex number struct
-struct comp {
+typedef struct {
     double real;
     double im;
-};
+} comp;
 
-struct value_depth {
+typedef struct {
     double value;
     int depth;
-};
+} value_depth;
 
 //starting point for z
-struct comp julia_root = {0, 0};
+comp julia_root = {0, 0};
 
 //viewing center
-struct comp center = {0, 0};
+comp center = {0, 0};
 
 //zoom level
 double zoom = 100;
@@ -50,21 +50,40 @@ void setpixel(SDL_Surface *screen, int x, int y, Uint8 r, Uint8 g, Uint8 b)
     *pixmem32 = color;
 }
 
+//directly get pixel using 32bit pixel value instead of rgb
+Uint32 get_pixel32( SDL_Surface *screen, int x, int y )
+{
+    //y = y*screen->pitch/BPP;
+    //Convert the pixels to 32 bit
+    Uint32 *pixels = (Uint32 *)screen->pixels;
+    
+    //Get the requested pixel
+    return pixels[ ( y * screen->w) + x ];
+}
+
+//put pixel for raw pixel instead of rgb
+void put_pixel32( SDL_Surface *screen, int x, int y, Uint32 pixel )
+{
+    //y = y*screen->pitch/BPP;
+    //Convert the pixels to 32 bit
+    Uint32 *pixels = (Uint32 *)screen->pixels;
+    
+    //Set the pixel
+    pixels[ ( y * screen->w ) + x ] = pixel;
+}
 
 //suite of stub functions for manipulating complex number structs
-struct comp add(struct comp a, struct comp b)
+comp add(comp a, comp b)
 {
-    return (struct comp){a.real+b.real, a.im+b.im};
+    return (comp){a.real+b.real, a.im+b.im};
 }
 
-struct comp mult(struct comp a, struct comp b)
+comp mult(comp a, comp b)
 { 
-    return (struct comp){a.real*b.real - a.im*b.im, a.real*b.im + a.im*b.real};
+    return (comp){a.real*b.real - a.im*b.im, a.real*b.im + a.im*b.real};
 }
 
-
-
-double abs_im(struct comp a)
+double abs_im(comp a)
 {
     return sqrtf(a.real * a.real + a.im * a.im);
 }
@@ -86,68 +105,108 @@ double sign(double x)
     return -1;
 }
 
-struct value_depth mandel(struct comp c, int iterations)
+// ===================================
+// all of the fractal functions go here
+// ===================================
+value_depth sinking_ship(comp c, int iterations)
 {
-    struct comp z = julia_root;
+    comp z = julia_root;
     for (int i=0; i<iterations; i++)
     {
         z.real = fabs(z.real);
         z.im = fabs(z.im);
         z = add(mult(z, z), c);
         if (abs_im(z) > 2)
-            return (struct value_depth) {abs_im(z), i};
+            return (value_depth) {abs_im(z), i};
     }
-    return (struct value_depth) {0.0, iterations};
+    return (value_depth) {0.0, iterations};
 }
 
-struct value_depth julia(struct comp c, int iterations)
+value_depth julia(comp c, int iterations)
 {
-    struct comp z = c;
+    comp z = c;
     for (int i=0; i<iterations; i++)
     {
         
         z = add(mult(z, z), julia_root);
         if (abs_im(z) > 2)
-            return (struct value_depth) {abs_im(z), i};
+            return (value_depth) {abs_im(z), i};
     }
-    return (struct value_depth) {0.0, iterations};
+    return (value_depth) {0.0, iterations};
 }
 
-struct value_depth mandel_3(struct comp c, int iterations)
+value_depth mandel_3(comp c, int iterations)
 {
-    struct comp z = c;
+    comp z = c;
     for (int i=0; i<iterations; i++)
     {
         z = add(mult(z, mult(z, z)), julia_root);
         if (abs_im(z) > 2)
-            return (struct value_depth) {abs_im(z), i};
+            return (value_depth) {abs_im(z), i};
     }
-    return (struct value_depth) {0.0, iterations};
+    return (value_depth) {0.0, iterations};
 }
 
-struct value_depth sinking_ship(struct comp c, int iterations)
+value_depth mandel(comp c, int iterations)
 {
-    struct comp z = julia_root;
+    comp z = julia_root;
     for (int i=0; i<iterations; i++)
     {
         z = add(mult(z, z), c);
         if (abs_im(z) > 2)
-            return (struct value_depth) {abs_im(z), i};
+            return (value_depth) {abs_im(z), i};
     }
-    return (struct value_depth) {0.0, iterations};
+    return (value_depth) {0.0, iterations};
 }
 
-
-
-
-
-struct comp px_to_math(int x, int y)
+//convert from screen pixels to coordinates in the imaginary plane
+comp px_to_math(double x, double y)
 {
-    return (struct comp) {(x - (WIDTH/2)) / zoom - center.real, 
-                          (y - (HEIGHT/2)) / zoom - center.im};
+    return (comp) {(x - (WIDTH/2)) / zoom - center.real, 
+                          -((y - (HEIGHT/2)) / zoom - center.im)};
 }
-   
 
+//get values for pixel at x y. not to be confused with get_pixel32 which retrieves prev written pixels
+void get_pixel(double x, double y, value_depth *vd)
+{
+    comp c = px_to_math(x, y);
+    switch (func)
+    {
+        case MANDEL://mandel
+            c.real -=  sqr(julia_root.real) - sqr(julia_root.im);
+            c.im -= 2*(julia_root.real*julia_root.im);
+            *vd = mandel(c, iterations);
+            break;
+
+        case JULIA://julia
+            *vd = julia(c, iterations);
+            break;
+
+        case JULIA_3://z^3+c
+            *vd = mandel_3(c, iterations);
+            break;
+
+        case SINKING_SHIP://sinking ship
+            c.real -=  fabs(sqr(julia_root.real) - sqr(julia_root.im));
+            c.im -= fabs(2*(julia_root.real*julia_root.im));
+            *vd = sinking_ship(c, iterations);
+            break;
+    }
+}
+
+//funtion for choosing which value to keep for mulitple depth readings
+int zero_or_max(running, new)
+{
+    if (new ==0)
+        return 0;
+    if (new > running)
+        return new;
+    return running;
+}
+
+// =======================================================
+// most of the work is done here, get each pixel and draw it.
+// ======================================================
 void DrawScreen(SDL_Surface* screen, int h)
 {
 
@@ -163,57 +222,69 @@ void DrawScreen(SDL_Surface* screen, int h)
     //printf("%.3f %.3f\n", julia_root.real, julia_root.im);
     
     double v, color;
-    struct comp c;
-    struct value_depth vd;
+    int d;
+    value_depth vd;
 
-    for (y = screen->h; y >= 0; y--)
+    for (y = 0; y <screen->h; y++)
     {
         for(x = 0; x < screen->w; x++)
         {
-            //get x y in a complex number and adjust for the drift
-            //aka move to center the origin as the so-called "julia number" changes
-            c = px_to_math(x, y);
-            switch (FUNCTION)
+            v = 0.0;
+            d = 0;
+            //if in fast mode and not in a corner pixel
+            if (!(x % compr_level == 0 && y % compr_level == 0))
             {
-                case 0://mandel
-                    c.real -=  sqr(julia_root.real) - sqr(julia_root.im);
-                    c.im -= 2*(julia_root.real*julia_root.im);
-                    vd = mandel(c, iterations);
-                    break;
-
-                case 1://julia
-                    vd = julia(c, iterations);
-                    break;
-
-                case 2://mandel^3
-                    vd = mandel_3(c, iterations);
-                    break;
-
-                case 3://sinking ship
-                    vd = sinking_ship(c, iterations);
-                    c.real -=  fabs(sqr(julia_root.real) - sqr(julia_root.im));
-                    c.im -= fabs(2*(julia_root.real*julia_root.im));
-                    break;
-
+                //just copy and paste top corner pixel
+                put_pixel32(screen, x, y,
+                        get_pixel32(screen, x-(x%compr_level), y-(y%compr_level)));
             }
-            
-            v = vd.value;
+            else 
+            {
+                if (smoothing)
+                {
+                    //get x y in a complex number and adjust for the drift
+                    //aka move to center the origin as the so-called "julia number" changes
+                    get_pixel((double) x+0.25, (double) y+0.25, &vd);
+                    v += vd.value; 
+                    d = zero_or_max(d, vd.depth);
 
-            //use overshoot value to color, soft colors using some math
-            color = ((.5*(v-1.5)) / (1+.5*(v-1.5))) * 30 + 20;
-         
-            //convert to RGB for rendering
-            hsv HSV = {color, 0.8, 0.8};
-            if (v==0)
-                HSV.v = 0;
-            else
-                HSV.v = 0.1 + 0.4 * ((double) vd.depth/iterations)+ 0.5; //* (color/30-20);
+                    get_pixel((double) x-0.25, (double) y+0.25, &vd);
+                    v += vd.value; 
+                    d = zero_or_max(d, vd.depth);
 
-            HSV.s = 1-((double) vd.depth/iterations);
-            rgb RGB = hsv2rgb(HSV);
-            
-            //write this pixel
-            setpixel(screen, x, y, RGB.r*256, RGB.g*256, RGB.b*256);
+                    get_pixel((double) x-0.25, (double) y-0.25, &vd);
+                    v += vd.value; 
+                    d = zero_or_max(d, vd.depth);
+                    
+                    get_pixel((double) x+0.25, (double) y-0.25, &vd);
+                    v += vd.value; 
+                    d = zero_or_max(d, vd.depth);
+
+                    v /= 4;
+
+                }
+                else    
+                {
+                    get_pixel((double) x, (double) y, &vd);
+                    v = vd.value; d = vd.depth;
+                }
+
+                //use overshoot value to color, soft colors using some math
+                color = ((.5*(v-1.5)) / (1+.5*(v-1.5))) * 30 + 20;
+             
+                //convert to RGB for rendering
+                hsv HSV = {color, 0.8, 0.8};
+                if (v==0)
+                    HSV.v = 0;
+                else
+                    HSV.v = 0.1 + 0.4 * ((double) d/iterations)+ 0.5; //* (color/30-20);
+
+                HSV.s = 1-((double) d/iterations);
+                rgb RGB = hsv2rgb(HSV);
+                
+                //write this pixel
+                setpixel(screen, x, y, RGB.r*256, RGB.g*256, RGB.b*256);
+            }
         }
     }
 
@@ -229,6 +300,9 @@ void print_data(void)
     printf("Iterations: %d\n", iterations);
     printf("Julia value: %f, %f\n", julia_root.real, julia_root.im);
     printf("Center: %f, %f\n", center.real, center.im);
+    printf("Zoom: %f\n", zoom);
+    printf("Smoothing: %d\n", smoothing);
+    printf("Compression Level: %d\n", compr_level);
     printf("\n");
 }
 
@@ -316,9 +390,16 @@ int main(int argc, char* argv[])
                         
                         case SDLK_e:
                             zoom *= 1.1;
+                            iterations = (int) pow(zoom, 0.2753)*10;
+                            break;
+
+                        case SDLK_f:
+                            zoom *= 1.1;
                             center.real -= (mouse_x - WIDTH/2)/(zoom*2);
                             center.im -= (mouse_y - HEIGHT/2)/(zoom*2);
+                            iterations = (int) pow(zoom, 0.2753)*10;
                             break;
+
 
                         case SDLK_q:
                             zoom /= 1.1;
@@ -328,27 +409,37 @@ int main(int argc, char* argv[])
                             quit = 1;
                             break;
 
-                        case SDLK_2:
-                            iterations += 1;
-                            break;
-
                         case SDLK_1:
                             iterations -= 1;
                             break;
 
+                        case SDLK_2:
+                            iterations += 1;
+                            break;
+
                         case SDLK_3:
-                            iterations = 10;
+                            iterations /= 2;
                             break;
 
                         case SDLK_4:
-                            iterations += 10;
+                            iterations *= 2;
                             break;
 
                         case SDLK_r:
                             iterations = 10;
-                            center = (struct comp) {0, 0};
+                            center = (comp) {0, 0};
                             zoom = 100;
-                            julia_root = (struct comp) {0,0};
+                            julia_root = (comp) {0,0};
+                            break;
+
+                        case SDLK_x:
+                            compr_level *= 2;
+                            if (compr_level > 32)
+                                compr_level = 1;
+                            break;
+
+                        case SDLK_z:
+                            smoothing = !smoothing;
                             break;
 
                         default:
