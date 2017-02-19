@@ -132,7 +132,7 @@ value_depth julia(comp c, int iterations)
         if (abs_im(z) > 2)
             return (value_depth) {abs_im(z), i};
     }
-    return (value_depth) {0.0, iterations};
+    return (value_depth) {abs_im(z), iterations};
 }
 
 value_depth mandel_3(comp c, int iterations)
@@ -269,17 +269,26 @@ void DrawScreen(SDL_Surface* screen, int h)
                     v = vd.value; d = vd.depth;
                 }
 
-                //use overshoot value to color, soft colors using some math
-                color = ((.5*(v-1.5)) / (1+.5*(v-1.5))) * 30 + 20;
+                color = 300 - 300*((double) d/iterations);
+                //((.5*(v-1.5)) / (1+.5*(v-1.5))) * 100 + 00;
+
              
                 //convert to RGB for rendering
-                hsv HSV = {color, 0.8, 0.8};
-                if (v==0)
-                    HSV.v = 0;
-                else
-                    HSV.v = 0.1 + 0.4 * ((double) d/iterations)+ 0.5; //* (color/30-20);
+                hsv HSV = {0, 0.8, 0.8};
 
-                HSV.s = 1-((double) d/iterations);
+                if (d==iterations)//if in the middle
+                {
+                HSV.h = 0;
+                HSV.v = 3*(fmod(v/12.5, 1)+ 0.5*(d/iterations));
+                HSV.s = 0;                
+                }
+                else
+                {
+                HSV.h = 300 - 300*((double) d/iterations);
+                HSV.v = 1- 0.5*fmod(v/12.5, 1) + 0.5*(d/iterations) ;
+                HSV.s = 0.9 -0.9*((double) d/iterations);
+                }
+
                 rgb RGB = hsv2rgb(HSV);
                 
                 //write this pixel
