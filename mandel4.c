@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <SDL.h>
+#include "/Library/Frameworks/SDL2.framework/Versions/A/Headers/SDL.h"
 #include <math.h>
 #include "color_custom.h"
 #define WIDTH 500
